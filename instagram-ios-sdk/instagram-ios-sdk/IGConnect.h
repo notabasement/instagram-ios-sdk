@@ -8,4 +8,4 @@
 
 #import "Instagram.h"
 #import "IGRequest.h"
-#import "SBJSON.h"
+#import <SBJSON/SBJSON.h>
