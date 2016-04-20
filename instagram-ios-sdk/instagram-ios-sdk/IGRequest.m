@@ -7,7 +7,6 @@
 //
 
 #import "IGRequest.h"
-#import "JSON.h"
 
 
 static NSString* kUserAgent = @"InstagramConnect";
@@ -23,7 +22,6 @@ NSString* const InstagramErrorDomain = @"instagramErrorDomain";
 @property (nonatomic, readwrite) IGRequestState state;
 
 @end
-
 
 @implementation IGRequest
 
@@ -88,7 +86,7 @@ NSString* const InstagramErrorDomain = @"instagramErrorDomain";
         [pairs addObject:[NSString stringWithFormat:@"%@=%@", key, escaped_value]];
     }
     NSString* query = [pairs componentsJoinedByString:@"&"];
-    
+    NSLog(@"URL: %@", [NSString stringWithFormat:@"%@%@%@", baseUrl, queryPrefix, query]);
     return [NSString stringWithFormat:@"%@%@%@", baseUrl, queryPrefix, query];
 }
 
@@ -133,7 +131,7 @@ NSString* const InstagramErrorDomain = @"instagramErrorDomain";
                                data:[NSString stringWithFormat:
                                      @"Content-Disposition: form-data; filename=\"%@\"\r\n", key]];
                 [self utfAppendBody:body
-                               data:[NSString stringWithString:@"Content-Type: image/png\r\n\r\n"]];
+                               data:@"Content-Type: image/png\r\n\r\n"];
                 [body appendData:imageData];
             } else {
                 NSAssert([dataParam isKindOfClass:[NSData class]],
@@ -142,7 +140,7 @@ NSString* const InstagramErrorDomain = @"instagramErrorDomain";
                                data:[NSString stringWithFormat:
                                      @"Content-Disposition: form-data; filename=\"%@\"\r\n", key]];
                 [self utfAppendBody:body
-                               data:[NSString stringWithString:@"Content-Type: content/unknown\r\n\r\n"]];
+                               data:@"Content-Type: content/unknown\r\n\r\n"];
                 [body appendData:(NSData*)dataParam];
             }
             [self utfAppendBody:body data:endLine];
@@ -159,11 +157,8 @@ NSString* const InstagramErrorDomain = @"instagramErrorDomain";
 }
 
 - (id)parseJsonResponse:(NSData*)data error:(NSError**)error {
+    id result = [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableLeaves error:nil];
     
-    NSString* responseString = [[NSString alloc] initWithData:data
-                                                     encoding:NSUTF8StringEncoding];
-    SBJSON *jsonParser = [SBJSON new]; 
-    id result = [jsonParser objectWithString:responseString];
     NSDictionary* meta = (NSDictionary*)[result objectForKey:@"meta"];
     if ( meta && [[meta objectForKey:@"code"] integerValue] == 200) {
         //result = [result objectForKey:@"data"];
@@ -187,6 +182,7 @@ NSString* const InstagramErrorDomain = @"instagramErrorDomain";
     if ([_delegate respondsToSelector:@selector(request:didFailWithError:)]) {
         [_delegate request:self didFailWithError:error];
     }
+    self.error = error;
     self.state = kIGRequestStateError;
 }
 
@@ -283,6 +279,7 @@ NSString* const InstagramErrorDomain = @"instagramErrorDomain";
     self.responseText = nil;
     self.connection = nil;
     
+    self.error = error;
     self.state = kIGRequestStateError;
 }
 

@@ -9,31 +9,20 @@
 #import "Instagram.h"
 
 
-static NSString* kDialogBaseURL = @"https://instagram.com/";
-//static NSString* kGraphBaseURL = @"https://graph.facebook.com/";
-static NSString* kRestserverBaseURL = @"https://api.instagram.com/v1/";
+static NSString* kDialogBaseURL         = @"https://instagram.com/";
+static NSString* kRestserverBaseURL     = @"https://api.instagram.com/v1/";
 
-
-//static NSString* kFBAppAuthURLScheme = @"fbauth";
-//static NSString* kFBAppAuthURLPath = @"authorize";
-//static NSString* kRedirectURL = @"igconnect://success";
-
-static NSString* kLogin = @"oauth/authorize";
-//static NSString* kSDK = @"ios";
-//static NSString* kSDKVersion = @"2";
+static NSString* kLogin                 = @"oauth/authorize";
 
 static NSString *requestFinishedKeyPath = @"state";
-static void *finishedContext = @"finishedContext";
-
-
-
+static void *finishedContext            = @"finishedContext";
 
 @interface Instagram ()
 
 @property(nonatomic, strong) NSArray* scopes;
 @property(nonatomic, strong) NSString* clientId;
 
--(void)authorizeWithSafary;
+-(void)authorizeWithSafari;
 
 @end
 
@@ -57,7 +46,12 @@ static void *finishedContext = @"finishedContext";
 
 - (void)dealloc {
     for (IGRequest* request in _requests) {
-        [_requests removeObserver:self forKeyPath:requestFinishedKeyPath];
+        @try {
+            [request removeObserver:self forKeyPath:requestFinishedKeyPath];
+        }
+        @catch (NSException *exception) {
+            NSLog(@"%@", exception);
+        }
     }
 }
 
@@ -72,16 +66,16 @@ static void *finishedContext = @"finishedContext";
     for (NSHTTPCookie* cookie in instagramCookies) {
         [cookies deleteCookie:cookie];
     }
+
+    if ([self.sessionDelegate respondsToSelector:@selector(igSessionInvalidated)]) {
+        [self.sessionDelegate igSessionInvalidated];
+    }
 }
 
 - (IGRequest*)openUrl:(NSString *)url
                params:(NSMutableDictionary *)params
            httpMethod:(NSString *)httpMethod
              delegate:(id<IGRequestDelegate>)delegate {
-    
-//    [params setValue:@"json" forKey:@"format"];
-//    [params setValue:kSDK forKey:@"sdk"];
-//    [params setValue:kSDKVersion forKey:@"sdk_version"];
     if ([self isSessionValid]) {
         [params setValue:self.accessToken forKey:@"access_token"];
     }
@@ -101,10 +95,14 @@ static void *finishedContext = @"finishedContext";
         IGRequest* _request = (IGRequest*)object;
         IGRequestState requestState = [_request state];
         if (requestState == kIGRequestStateError) {
-            [self invalidateSession];
-            if ([self.sessionDelegate respondsToSelector:@selector(igSessionInvalidated)]) {
-                [self.sessionDelegate igSessionInvalidated];
+            NSString *errType = (NSString *)[[_request.error userInfo] objectForKey:@"error_type"];
+            if (errType && [errType isEqualToString:@"OAuthAccessTokenException"]) {
+                [self logout];
             }
+//            [self invalidateSession];
+//            if ([self.sessionDelegate respondsToSelector:@selector(igSessionInvalidated)]) {
+//                [self.sessionDelegate igSessionInvalidated];
+//            }
         }
         if (requestState == kIGRequestStateComplete || requestState == kIGRequestStateError) {
             [_request removeObserver:self forKeyPath:requestFinishedKeyPath];
@@ -122,42 +120,23 @@ static void *finishedContext = @"finishedContext";
 /**
  * A private function for opening the authorization dialog.
  */
-- (void)authorizeWithSafary {
+- (void)authorizeWithSafari {
     NSMutableDictionary* params = [NSMutableDictionary dictionaryWithObjectsAndKeys:
                                    self.clientId, @"client_id",
                                    @"token", @"response_type",
                                    [self getOwnBaseUrl], @"redirect_uri",
                                    nil];
     
-    NSString *loginDialogURL = [kDialogBaseURL stringByAppendingString:kLogin];
+    NSString *loginDialogURL    = [kDialogBaseURL stringByAppendingString:kLogin];
     
     if (self.scopes != nil) {
         NSString* scope = [self.scopes componentsJoinedByString:@"+"];
         [params setValue:scope forKey:@"scope"];
     }
     
-    // If the device is running a version of iOS that supports multitasking,
-    // try to obtain the access token from Safary
-    BOOL didOpenOtherApp = NO;
-//    UIDevice *device = [UIDevice currentDevice];
-//    if ([device respondsToSelector:@selector(isMultitaskingSupported)] && [device isMultitaskingSupported]) {
-        
-//        NSString *nextUrl = [self getOwnBaseUrl];
-//        [params setValue:nextUrl forKey:@"redirect_uri"];
-        
-        NSString *igAppUrl = [IGRequest serializeURL:loginDialogURL params:params];
-        didOpenOtherApp = [[UIApplication sharedApplication] openURL:[NSURL URLWithString:igAppUrl]];
-//    }
-    
-// If single sign-on failed, open an inline login dialog. This will require the user to
-// enter his or her credentials.
-//    if (!didOpenOtherApp) {
-//        [_loginDialog release];
-//        _loginDialog = [[FBLoginDialog alloc] initWithURL:loginDialogURL
-//                                              loginParams:params
-//                                                 delegate:self];
-//        [_loginDialog show];
-//    }
+    BOOL didOpenOtherApp        = NO;
+    NSString *igAppUrl          = [IGRequest serializeURL:loginDialogURL params:params];
+    didOpenOtherApp             = [[UIApplication sharedApplication] openURL:[NSURL URLWithString:igAppUrl]];
 }
 
 - (NSDictionary*)parseURLParams:(NSString *)query {
@@ -177,7 +156,7 @@ static void *finishedContext = @"finishedContext";
 -(void)authorize:(NSArray *)scopes {
     self.scopes = scopes;
     
-    [self authorizeWithSafary];
+    [self authorizeWithSafari];
 }
 
 - (BOOL)handleOpenURL:(NSURL *)url {
@@ -195,9 +174,7 @@ static void *finishedContext = @"finishedContext";
     NSString *accessToken = [params valueForKey:@"access_token"];
     
     // If the URL doesn't contain the access token, an error has occurred.
-    if (!accessToken) {
-//        NSString *error = [params valueForKey:@"error"];
-        
+    if (!accessToken) {        
         NSString *errorReason = [params valueForKey:@"error_reason"];
         
         BOOL userDidCancel = [errorReason isEqualToString:@"user_denied"];
@@ -205,17 +182,7 @@ static void *finishedContext = @"finishedContext";
         return YES;
     }
     
-//    // We have an access token, so parse the expiration date.
-//    NSString *expTime = [params valueForKey:@"expires_in"];
-//    NSDate *expirationDate = [NSDate distantFuture];
-//    if (expTime != nil) {
-//        int expVal = [expTime intValue];
-//        if (expVal != 0) {
-//            expirationDate = [NSDate dateWithTimeIntervalSinceNow:expVal];
-//        }
-//    }
-    
-    [self igDidLogin:accessToken/* expirationDate:expirationDate*/];
+    [self igDidLogin:accessToken];
     return YES;
 }
 
