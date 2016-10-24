@@ -19,9 +19,9 @@
 
 -(id)initWithClientId:(NSString*)clientId delegate:(id<IGSessionDelegate>)delegate;
 
--(void)authorize:(NSArray*)scopes;
+-(id)initWithClientId:(NSString*)clientId redirectURI:(NSString *)uri delegate:(id<IGSessionDelegate>)delegate;
 
--(BOOL)handleOpenURL:(NSURL *)url;
+-(void)authorize:(NSArray*)scopes;
 
 -(void)logout;
 

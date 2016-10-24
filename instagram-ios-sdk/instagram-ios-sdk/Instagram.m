@@ -17,10 +17,13 @@ static NSString* kLogin                 = @"oauth/authorize";
 static NSString *requestFinishedKeyPath = @"state";
 static void *finishedContext            = @"finishedContext";
 
-@interface Instagram ()
+@interface Instagram () <UIWebViewDelegate>
 
 @property(nonatomic, strong) NSArray* scopes;
 @property(nonatomic, strong) NSString* clientId;
+@property(nonatomic, strong) NSString* redirectURI;
+@property(nonatomic, strong) UINavigationController *loginNavigationController;
+@property(nonatomic, strong) UIActivityIndicatorView *loadingIndicatorView;
 
 -(void)authorizeWithSafari;
 
@@ -34,10 +37,16 @@ static void *finishedContext            = @"finishedContext";
 @synthesize scopes = _scopes;
 @synthesize clientId = _clientId;
 
+
 -(id)initWithClientId:(NSString*)clientId delegate:(id<IGSessionDelegate>)delegate {
+    return [self initWithClientId:clientId redirectURI:nil delegate:delegate];
+}
+
+-(id)initWithClientId:(NSString*)clientId redirectURI:(NSString *)uri delegate:(id<IGSessionDelegate>)delegate {
     self = [super init];
     if (self) {
         self.clientId = clientId;
+        self.redirectURI = uri;
         self.sessionDelegate = delegate;
         _requests = [[NSMutableSet alloc] init];
     }
@@ -121,10 +130,13 @@ static void *finishedContext            = @"finishedContext";
  * A private function for opening the authorization dialog.
  */
 - (void)authorizeWithSafari {
+    
+    NSString *redirectURI = self.redirectURI ?: [self getOwnBaseUrl];
+    
     NSMutableDictionary* params = [NSMutableDictionary dictionaryWithObjectsAndKeys:
                                    self.clientId, @"client_id",
                                    @"token", @"response_type",
-                                   [self getOwnBaseUrl], @"redirect_uri",
+                                   redirectURI, @"redirect_uri",
                                    nil];
     
     NSString *loginDialogURL    = [kDialogBaseURL stringByAppendingString:kLogin];
@@ -136,7 +148,8 @@ static void *finishedContext            = @"finishedContext";
     
     BOOL didOpenOtherApp        = NO;
     NSString *igAppUrl          = [IGRequest serializeURL:loginDialogURL params:params];
-    didOpenOtherApp             = [[UIApplication sharedApplication] openURL:[NSURL URLWithString:igAppUrl]];
+    
+    [self loginWithRequestURL:[NSURL URLWithString:igAppUrl]];
 }
 
 - (NSDictionary*)parseURLParams:(NSString *)query {
@@ -151,39 +164,63 @@ static void *finishedContext            = @"finishedContext";
     return params;
 }
 
+- (void)loginWithRequestURL:(NSURL *)url {
+    
+    UIViewController *loginViewController = [[UIViewController alloc] init];
+    UIView *loginView = loginViewController.view;
+    
+    // Cancel button
+    loginViewController.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(didTouchOnCancelLoginButton:)];
+    
+    // Web view
+    UIWebView *webView = [[UIWebView alloc] initWithFrame:loginView.frame];
+    [loginView addSubview:webView];
+    webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    webView.delegate = self;
+    
+    // Loading indicator
+    UIActivityIndicatorView *loadingIndicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
+    [loginView addSubview:loadingIndicator];
+    loadingIndicator.translatesAutoresizingMaskIntoConstraints = NO;
+    [loadingIndicator.centerXAnchor constraintEqualToAnchor:loginView.centerXAnchor].active = YES;
+    [loadingIndicator.centerYAnchor constraintEqualToAnchor:loginView.centerYAnchor].active = YES;
+    self.loadingIndicatorView = loadingIndicator;
+    
+    self.loginNavigationController = [[UINavigationController alloc] initWithRootViewController:loginViewController];
+    [self.frontViewController presentViewController:self.loginNavigationController animated:YES completion:^{
+        [webView loadRequest:[NSURLRequest requestWithURL:url]];
+        [loadingIndicator startAnimating];
+    }];
+}
+
+- (UIViewController *)frontViewController {
+    
+    UIWindow *keyWindow = [UIApplication sharedApplication].keyWindow;
+    UIViewController *viewController = keyWindow.rootViewController;
+    
+    while (viewController.presentedViewController) {
+        
+        viewController = viewController.presentedViewController;
+        
+        if ([viewController isKindOfClass:[UINavigationController class]]) {
+            viewController = ((UINavigationController *)viewController).topViewController;
+        }
+    }
+    
+    if (viewController.navigationController) {
+        viewController = viewController.navigationController;
+    }
+    
+    return viewController;
+}
+
+
 #pragma mark - public
 
 -(void)authorize:(NSArray *)scopes {
     self.scopes = scopes;
     
     [self authorizeWithSafari];
-}
-
-- (BOOL)handleOpenURL:(NSURL *)url {
-    // If the URL's structure doesn't match the structure used for Instagram authorization, abort.
-    if (![[url absoluteString] hasPrefix:[self getOwnBaseUrl]]) {
-        return NO;
-    }
-    
-    NSString *query = [url fragment];
-    if (!query) {
-        query = [url query];
-    }
-    
-    NSDictionary *params = [self parseURLParams:query];
-    NSString *accessToken = [params valueForKey:@"access_token"];
-    
-    // If the URL doesn't contain the access token, an error has occurred.
-    if (!accessToken) {        
-        NSString *errorReason = [params valueForKey:@"error_reason"];
-        
-        BOOL userDidCancel = [errorReason isEqualToString:@"user_denied"];
-        [self igDidNotLogin:userDidCancel];
-        return YES;
-    }
-    
-    [self igDidLogin:accessToken];
-    return YES;
 }
 
 - (void)logout {
@@ -246,6 +283,63 @@ static void *finishedContext            = @"finishedContext";
     if ([self.sessionDelegate respondsToSelector:@selector(igDidNotLogin:)]) {
         [self.sessionDelegate igDidNotLogin:cancelled];
     }
+}
+
+
+#pragma mark - <UIWebViewDelegate>
+
+- (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType {
+    
+    NSURL *url = request.URL;
+    
+    // If the URL's structure doesn't match the structure used for Instagram authorization, abort.
+    if (![[url absoluteString] hasPrefix:self.redirectURI]) {
+        return YES;
+    }
+    
+    NSString *query = [url fragment];
+    if (!query) {
+        query = [url query];
+    }
+    
+    NSDictionary *params = [self parseURLParams:query];
+
+    [self.loginNavigationController dismissViewControllerAnimated:YES completion:^{
+        
+        NSString *accessToken = [params valueForKey:@"access_token"];
+        
+        // If the URL doesn't contain the access token, an error has occurred.
+        if (!accessToken) {
+            NSString *errorReason = [params valueForKey:@"error_reason"];
+            
+            BOOL userDidCancel = [errorReason isEqualToString:@"user_denied"];
+            [self igDidNotLogin:userDidCancel];
+        }
+        
+        [self igDidLogin:accessToken];
+    }];
+    
+    return YES;
+}
+
+- (void)webViewDidFinishLoad:(UIWebView *)webView {
+    if (self.loadingIndicatorView) {
+        [self.loadingIndicatorView stopAnimating];
+        [self.loadingIndicatorView removeFromSuperview];
+        self.loadingIndicatorView = nil;
+    }
+}
+
+
+#pragma mark - Actions
+
+- (void)didTouchOnCancelLoginButton:(UIBarButtonItem *)barButton {
+
+    [self.loginNavigationController dismissViewControllerAnimated:YES completion:^{
+        
+        [self igDidNotLogin:YES];
+        self.loginNavigationController = nil;
+    }];
 }
 
 @end
