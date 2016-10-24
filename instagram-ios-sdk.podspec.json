@@ -1,0 +1,22 @@
+{
+  "name": "instagram-ios-sdk",
+  "version": "1.1.1.2",
+  "summary": "Instagram SDK for iOS.",
+  "description": "This open source iOS library allows you to integrate Instagram into your iOS application include iPhone, iPad and iPod touch.",
+  "homepage": "http://www.followgram.me",
+  "license": {
+    "type": "MIT",
+    "text": "LICENSE\n               \t\n               \tCopyright (C) 2012 Cristiano Severini\n\n\t\t\t\tDistributed under the MIT License."
+  },
+  "authors": "Cristiano Severini",
+  "source": {
+    "git": "https://github.com/notabasement/instagram-ios-sdk.git",
+    "branch": "release/1.1.1.2"
+  },
+  "platforms": {
+    "ios": "5.0"
+  },
+  "source_files": "instagram-ios-sdk/instagram-ios-sdk",
+  "public_header_files": "instagram-ios-sdk/instagram-ios-sdk/*.h",
+  "requires_arc": true
+}
