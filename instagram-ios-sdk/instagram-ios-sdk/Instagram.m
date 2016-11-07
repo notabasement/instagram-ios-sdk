@@ -66,7 +66,7 @@ static void *finishedContext            = @"finishedContext";
 
 #pragma mark - internal
 
--(void)invalidateSession {
+- (void)removeTokenAndCookies {
     self.accessToken = nil;
     
     NSHTTPCookieStorage* cookies = [NSHTTPCookieStorage sharedHTTPCookieStorage];
@@ -75,6 +75,10 @@ static void *finishedContext            = @"finishedContext";
     for (NSHTTPCookie* cookie in instagramCookies) {
         [cookies deleteCookie:cookie];
     }
+}
+
+-(void)invalidateSession {
+    [self removeTokenAndCookies];
 
     if ([self.sessionDelegate respondsToSelector:@selector(igSessionInvalidated)]) {
         [self.sessionDelegate igSessionInvalidated];
@@ -224,7 +228,7 @@ static void *finishedContext            = @"finishedContext";
 }
 
 - (void)logout {
-    [self invalidateSession];
+    [self removeTokenAndCookies];
     
     if ([self.sessionDelegate respondsToSelector:@selector(igDidLogout)]) {
         [self.sessionDelegate igDidLogout];
@@ -314,6 +318,8 @@ static void *finishedContext            = @"finishedContext";
             
             BOOL userDidCancel = [errorReason isEqualToString:@"user_denied"];
             [self igDidNotLogin:userDidCancel];
+            
+            return;
         }
         
         [self igDidLogin:accessToken];
