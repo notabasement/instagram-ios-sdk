@@ -191,6 +191,9 @@ static void *finishedContext            = @"finishedContext";
     self.loadingIndicatorView = loadingIndicator;
     
     self.loginNavigationController = [[UINavigationController alloc] initWithRootViewController:loginViewController];
+    
+    self.loginNavigationController.modalPresentationStyle = UIModalPresentationCustom;
+    
     [self.frontViewController presentViewController:self.loginNavigationController animated:YES completion:^{
         [webView loadRequest:[NSURLRequest requestWithURL:url]];
         [loadingIndicator startAnimating];
